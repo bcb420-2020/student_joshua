@@ -1,0 +1,211 @@
+---
+title: "BCB420 - Computational Systems Biology Assigment 1"
+subtitle: "Differential Gene expression and Preliminary ORA"
+author: "Joshua Efe"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+bibliography: a.bib
+#csl: biomed-central.csl
+---
+
+
+#Getting the Required packages
+```{r message=FALSE, warning=FALSE}
+
+#Get required packages
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!requireNamespace("GEOmetadb", quietly = TRUE))
+    BiocManager::install("GEOmetadb")
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+if (!requireNamespace("edgeR", quietly = TRUE))
+    BiocManager::install("edgeR")
+
+if (!requireNamespace("knitr", quietly = TRUE))
+    install.packages("knitr")
+
+library("GEOmetadb")
+library("edgeR")
+library("biomaRt")
+library("knitr")
+if(!file.exists('GEOmetadb.sqlite')) getSQLiteFile()
+
+file.info('GEOmetadb.sqlite')
+
+con <- dbConnect(SQLite(),'GEOmetadb.sqlite')
+```
+
+Getting the Data and doing some basic analysis
+```{r message=FALSE, warning=FALSE}
+sfiles = getGEOSuppFiles('GSE117829')
+gse <- getGEO("GSE117829",GSEMatrix=FALSE)
+kable(data.frame(head(Meta(gse))), format = "html")
+gset <- getGEO("GSE117829", GSEMatrix =TRUE, getGPL=FALSE)
+sfiles = getGEOSuppFiles('GSE117829')
+
+gse <- getGEO("GSE117829",GSEMatrix=FALSE)
+#just to see
+kable(data.frame(head(Meta(gse))), format = "html")
+
+#information
+current_gpl <- names(GPLList(gse))[1]
+current_gpl_info <- Meta(getGEO(current_gpl))
+current_gpl_info$title
+current_gpl_info$last_update_date
+current_gpl_info$organism
+fnames = rownames(sfiles)
+
+ipsc_exp = read.delim(fnames[1],header=TRUE,
+                       check.names = FALSE)
+dim(ipsc_exp)
+```
+
+
+Extracting the samples from the data
+```{r message=FALSE, warning=FALSE}
+samples <- data.frame(lapply(colnames(ipsc_exp)[2:22],
+                             FUN=function(x){unlist(strsplit(x, split = "(([P])|([5-9]))_"))[c(1,2)]}))
+colnames(samples) <- colnames(ipsc_exp)[2:22]
+rownames(samples) <- c("cell_type","repID") 
+samples <- data.frame(t(samples))
+
+summarized_gene_counts <- sort(table(ipsc_exp$Gene),decreasing = TRUE)
+kable(summarized_gene_counts[which(summarized_gene_counts>1)[1:22]], format="html")
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#translate out counts into counts per million using the edgeR package function cpm
+cpms = cpm(ipsc_exp[,2:22])
+rownames(cpms) <- ipsc_exp[,1]
+# get rid of low counts
+keep = rowSums(cpms >1) >=3
+ipsc_exp_filtered = ipsc_exp[keep,]
+
+
+dim(ipsc_exp_filtered)
+```
+
+Here it shows that we do not have repeated genes
+```{r message=FALSE, warning=FALSE}
+summarized_gene_counts_filtered <- sort(table(ipsc_exp_filtered$Gene),decreasing = TRUE)
+
+```
+
+Create a Box Plot for Non-normalized data
+```{r message=FALSE, warning=FALSE}
+data2plot <- log2(cpm(ipsc_exp_filtered[,2:22]))
+boxplot(data2plot, xlab = "Samples", ylab = "log2 CPM",
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "iPSC-microglia Samples")
+
+abline(h = median(apply(data2plot, 2, median)), col = "green", lwd = 0.6, lty = "dashed")
+
+```
+
+Desnsity distribtion for Non-Normalized Data
+```{r message=FALSE, warning=FALSE}
+#Distirbution of our data - Density plot
+#_________________________________________
+
+counts_density <- apply(log2(cpm(ipsc_exp_filtered[,2:22])), 2, density)
+
+#calculate limits
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density)) {
+    xlim <- range(c(xlim, counts_density[[i]]$x)); 
+    ylim <- range(c(ylim, counts_density[[i]]$y))
+}
+
+cols <- rainbow(length(counts_density))
+ltys <- rep(1, length(counts_density))
+
+#plot the desnity to inizalize
+plot(counts_density[[1]], xlim=xlim, ylim=ylim, type = "n",
+     ylab = "Smoothing density of log2-CPM", main="", cex.lab = 0.85)
+
+#plot each line
+for(i in 1:length(counts_density)) lines(counts_density[[i]], col=cols[i], lty=ltys[i])
+
+#create legened slide 39
+#Changed the size so it fit in the graph
+legend("topleft", colnames(data2plot),
+       col=cols, lty=ltys, cex=0.5,
+       border = "blue", text.col = "green4",
+       merge =TRUE, bg = "gray90")
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# M vs A
+plotMA(log2(ipsc_exp[,c(2,22)]), ylab="M - ratio log expression", main="iPSC + vs - - example")
+```
+
+```{r message=FALSE, warning=FALSE}
+#Apply TMM to our data 
+
+filtered_data_matrix <- as.matrix(ipsc_exp_filtered[,2:22])
+rownames(filtered_data_matrix) <- ipsc_exp_filtered$Gene
+d = DGEList(counts=filtered_data_matrix, group=samples$cell_type)
+
+d = calcNormFactors(d)
+
+normalized_counts <- cpm(d)
+dim(normalized_counts)
+data3plot <- log2(cpm(normalized_counts))
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Graphing the normalized data
+
+counts_density2 <- apply(log2(cpm(normalized_counts[,1:21])), 2, density)
+
+#calculate limits
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density2)) {
+    xlim <- range(c(xlim, counts_density2[[i]]$x)); 
+    ylim <- range(c(ylim, counts_density2[[i]]$y))
+}
+
+cols <- rainbow(length(counts_density2))
+ltys <- rep(1, length(counts_density2))
+
+#plot the desnity to inizalize
+plot(counts_density2[[1]], xlim=xlim, ylim=ylim, type = "n",
+     ylab = "Smoothing density of log2-CPM", main="", cex.lab = 0.85)
+
+#plot each line
+for(i in 1:length(counts_density2)) lines(counts_density2[[i]], col=cols[i], lty=ltys[i])
+
+#create legened slide 39
+#Changed the size so it fit in the graph
+legend("topleft", colnames(data2plot),
+       col=cols, lty=ltys, cex=0.5,
+       border = "blue", text.col = "green4",
+       merge =TRUE, bg = "gray90")
+```
+
+```{r message=FALSE, warning=FALSE}
+#MDS plot to represent seperation
+
+plotMDS(d, labels=rownames(samples),
+        col = c("darkgreen","blue")[factor(samples$cell_type)])
+```
+
+Finally we have the Normalized DataSet
+```{r message=FALSE, warning=FALSE}
+
+NormalizedData <- data3plot
+NormalizedData <-cbind.data.frame(ipsc_exp_filtered[,1],NormalizedData, stringsAsFactors = FALSE)
+colnames(NormalizedData)[1] <-"genes"
+NormalizedData$genes
+
+```
+
+# References
