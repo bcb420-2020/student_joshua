@@ -1,0 +1,386 @@
+---
+title: "BCB420 - Computational Systems Biology Assignment 2 Differential Gene expression and Preliminary ORA"
+author: "Joshua Efe"
+date: "r Sys.Date()"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+bibliography: a.bib
+---
+
+# Material from A1
+```{r a1, message=FALSE, warning=FALSE, child='A1t.Rmd', include=FALSE, echo=FALSE, eval=TRUE}
+
+```
+Data was from GEO with ID 'GSE72055'
+
+
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+library(dplyr)
+library(magrittr)
+library(knitr)
+library(kableExtra)
+(NormalizedData)
+```
+# Differential Gene Expression
+The MDS Plot from A1
+```{r}
+
+plotMDS(d, labels=rownames(samples),
+        col = c("gold4","blue")[factor(samples$treatment)])
+```
+
+
+```{r}
+normalized_count_data <- NormalizedData
+kable(normalized_count_data[1:5,1:5], type="html")
+
+heatmap_matrix <- normalized_count_data[,3:ncol(normalized_count_data)]
+rownames(heatmap_matrix) <- normalized_count_data$ensembl_gene_id
+colnames(heatmap_matrix) <- colnames(normalized_count_data[,3:ncol(normalized_count_data)])
+```
+
+
+
+```{r}
+limma::plotMDS(heatmap_matrix,
+               col = rep(c("darkgreen","blue"),10))
+
+samples <- data.frame(lapply(colnames(normalized_count_data)[3:8],
+                             FUN=function(x){unlist(strsplit(x, split = "_"))[c(1,2)]}))
+colnames(samples) <- colnames(normalized_count_data)[3:8]
+rownames(samples) <- c("treatment","repID") 
+samples <- data.frame(t(samples))
+samples[1:6,]
+
+
+```
+
+## Create our data matrix
+
+```{r}
+model_design <- model.matrix(~ samples$treatment)
+kable(model_design, type="html")
+
+expressionMatrix <- as.matrix(normalized_count_data[,3:8])
+rownames(expressionMatrix) <- normalized_count_data$ensembl_gene_id
+colnames(expressionMatrix) <- colnames(normalized_count_data)[3:8]
+minimalSet <- ExpressionSet(assayData=expressionMatrix)
+
+#Fit our data to the above model
+fit <- lmFit(minimalSet, model_design)
+```
+## Getting the P values
+
+We will be applying empircal Bayes to compute differential expression for the data model we created above to get the P values
+
+```{r}
+
+fit2 <- eBayes(fit,trend=TRUE)
+topfit <- topTable(fit2, 
+                   coef=ncol(model_design),
+                   adjust.method = "BH",
+                   number = nrow(expressionMatrix))
+#merge hgnc names to topfit table
+output_hits <- merge(normalized_count_data[,1:2],
+                     topfit,
+                     by.y=0,by.x=1,
+                     all.y=TRUE)
+#sort by pvalue
+output_hits <- output_hits[order(output_hits$P.Value),]
+kable(output_hits[1:10,],type="html")
+```
+## How many gene pass the threshold p-value < 0.05 in both the unadjusted and adjusted p-values?
+```{r}
+length(which(output_hits$P.Value < 0.05))
+length(which(output_hits$adj.P.Val < 0.05))
+```
+
+```{r}
+model_design_pat <- model.matrix(
+  ~ samples$repID + samples$treatment)
+kable(model_design_pat,type="html")
+```
+
+## Finding the Pvalue with a different model using the Limma package
+```{r}
+#Fit our data to the above model
+
+fit_pat <- lmFit(minimalSet, model_design_pat)
+#Apply empircal Bayes to compute differential expression for the above described model.
+
+fit2_pat <- eBayes(fit_pat,trend=TRUE)
+topfit_pat <- topTable(fit2_pat, 
+                   coef=ncol(model_design_pat),
+                   adjust.method = "BH",
+                   number = nrow(expressionMatrix))
+#merge hgnc names to topfit table
+output_hits_pat <- merge(normalized_count_data[,1:2],
+                         topfit_pat,by.y=0,by.x=1,all.y=TRUE)
+#sort by pvalue
+output_hits_pat <- output_hits_pat[order(output_hits_pat$P.Value),]
+kable(output_hits_pat[1:10,],type="html")
+```
+
+```{r}
+#How many gene pass the threshold p-value < 0.05?
+
+length(which(output_hits_pat$P.Value < 0.05))
+
+#How many genes pass correction?
+
+length(which(output_hits_pat$adj.P.Val < 0.05))
+```
+## Compare the results from the two different models
+```{r}
+
+
+simple_model_pvalues <- data.frame(ensembl_id = output_hits$ensembl_gene_id,
+                                   simple_pvalue=output_hits$P.Value)
+pat_model_pvalues <-  data.frame(ensembl_id = output_hits_pat$ensembl_gene_id,
+                                 replicate_pvalue = output_hits_pat$P.Value)
+two_models_pvalues <- merge(simple_model_pvalues,
+                            pat_model_pvalues,by.x=1,by.y=1)
+two_models_pvalues$colour <- "black"
+two_models_pvalues$colour[two_models_pvalues$simple_pvalue<0.05] <- "orange"
+two_models_pvalues$colour[two_models_pvalues$replicate_pvalue<0.05] <- "blue"
+two_models_pvalues$colour[two_models_pvalues$simple_pvalue<0.05 & two_models_pvalues$replicate_pvalue<0.05] <- "red"
+plot(two_models_pvalues$simple_pvalue,two_models_pvalues$replicate_pvalue,
+     col = two_models_pvalues$colour,
+     xlab = "simple model p-values",
+     ylab ="replicate model p-values", 
+     main="Simple vs replicate Limma")
+```
+
+```{r}
+ensembl_of_interest <- normalized_count_data$ensembl_gene_id[
+  which(normalized_count_data$hgnc_symbol == "CYP1A1")]
+two_models_pvalues$colour <- "grey"
+two_models_pvalues$colour[two_models_pvalues$ensembl_id==ensembl_of_interest] <- "red"
+plot(two_models_pvalues$simple_pvalue,two_models_pvalues$replicate_pvalue,
+     col = two_models_pvalues$colour,
+     xlab = "simple model p-values",
+     ylab ="replicate model p-values",
+      main="Simple vs replicate Limma")
+```
+
+
+--
+
+
+## Set up our edgeR objects
+```{r}
+
+
+d = DGEList(counts=filtered_data_matrix, group=samples$treatment)
+
+#Estimate Dispersion - our model design.
+
+d <- estimateDisp(d, model_design_pat)
+
+#Fit the model
+
+fit <- glmQLFit(d, model_design_pat)
+
+
+kable(model_design_pat[1:6,1:4], type="html") %>%
+  row_spec(0, angle = -40)
+
+## Calculating the differential expression using the Quasi liklihood model
+
+
+qlf.pos_vs_neg <- glmQLFTest(fit, coef='samples$treatmentiso12')
+kable(topTags(qlf.pos_vs_neg), type="html")
+```
+
+
+```{r}
+
+
+qlf_output_hits <- topTags(qlf.pos_vs_neg,sort.by = "PValue",
+                           n = nrow(normalized_count_data))
+#How many gene pass the threshold p-value < 0.05?
+
+length(which(qlf_output_hits$table$PValue < 0.05))
+
+#How many genes pass correction?
+
+length(which(qlf_output_hits$table$FDR < 0.05))
+
+```
+## Compare the results from the two different models
+```{r}
+
+
+#Limma vs Quasi liklihood
+qlf_pat_model_pvalues <- data.frame(
+          ensembl_id = rownames(qlf_output_hits$table),
+          qlf_replicate_pvalue=qlf_output_hits$table$PValue)
+limma_pat_model_pvalues <-  data.frame(
+          ensembl_id = output_hits_pat$ensembl_gene_id,
+          limma_replicate_pvalue = output_hits_pat$P.Value)
+two_models_pvalues <- merge(qlf_pat_model_pvalues,
+                            limma_pat_model_pvalues,
+                            by.x=1,by.y=1)
+two_models_pvalues$colour <- "black"
+two_models_pvalues$colour[two_models_pvalues$qlf_replicate_pvalue<0.05] <- "orange"
+two_models_pvalues$colour[two_models_pvalues$limma_replicate_pvalue<0.05] <- "blue"
+two_models_pvalues$colour[two_models_pvalues$qlf_replicate_pvalue<0.05 & two_models_pvalues$limma_replicate_pvalue<0.05] <- "red"
+plot(two_models_pvalues$qlf_replicate_pvalue,
+     two_models_pvalues$limma_replicate_pvalue,
+     col = two_models_pvalues$colour,
+     xlab = "QLF replicate model p-values",
+     ylab ="Limma replicate model p-values",
+     main="QLF vs Limma")
+```
+
+# MA PLot
+```{r}
+
+plotMA(fit2, main="hTR DMSO vs ISO")
+```
+
+Differential Gene Expression
+
+Conduct differential expression analysis with your normalized expression set from Assignment #1. Define your model design to be used to calculate differential expression - revisit your MDS plot from Assignment #1 to demonstrate your choice of factors in your model.
+
+Calculate p-values for each of the genes in your expression set. How many genes were significantly differentially expressed? What thresholds did you use and why?
+Based of the P values 12739 genes where signifcantly diffentailly expressed
+
+Multiple hypothesis testing - correct your p-values using a multiple hypothesis correction method. Which method did you use? And Why? How many genes passed correction?
+
+I used the Emprical Bayes method, Based of the adjusted P values 12643 genes where signifcantly diffentailly expressed
+
+Based off the adjusted P values 12643 genes where signifcantly diffentailly expressed I used 
+
+
+
+# Thresholded over-representation analysis
+```{r}
+#estimate dispersion
+d <- estimateDisp(d, model_design_pat)
+#calculate normalization factors
+d <- calcNormFactors(d)
+#fit model
+fit <- glmQLFit(d, model_design_pat)
+#calculate differential expression
+qlf.pos_vs_neg <- glmQLFTest(fit, coef='samples$treatmentiso12')
+
+qlf_output_hits <- topTags(qlf.pos_vs_neg,sort.by = "PValue",
+                           n = nrow(filtered_data_matrix))
+
+length(which(qlf_output_hits$table$PValue < 0.05))
+
+kable(topTags(qlf.pos_vs_neg), type="html")
+```
+
+## Upreglauted and downregulated genes
+```{r}
+
+#How many genes are up regulated?
+
+length(which(qlf_output_hits$table$PValue < 0.05 
+             & qlf_output_hits$table$logFC > 0))
+
+#How many genes are down regulated?
+
+length(which(qlf_output_hits$table$PValue < 0.05 
+             & qlf_output_hits$table$logFC < 0))
+```
+## Threshold number of genes
+```{r}
+#Create thresholded lists of genes.
+
+#merge essabmle IDs with the top hits
+qlf_output_hits_withgn <- merge(tel_exp[,1:2],qlf_output_hits, by.x=1, by.y = 0)
+qlf_output_hits_withgn[,"rank"] <- -log(qlf_output_hits_withgn$PValue,base =10) * sign(qlf_output_hits_withgn$logFC)
+qlf_output_hits_withgn <- qlf_output_hits_withgn[order(qlf_output_hits_withgn$rank),]
+
+upregulated_genes <- qlf_output_hits_withgn$ID[
+  which(qlf_output_hits_withgn$PValue < 0.05 
+             & qlf_output_hits_withgn$logFC > 0)]
+
+downregulated_genes <- qlf_output_hits_withgn$ID[
+  which(qlf_output_hits_withgn$PValue < 0.05 
+             & qlf_output_hits_withgn$logFC < 0)]
+
+
+write.table(x=upregulated_genes,
+            file=file.path("data","tel_exp_upregulated_genes.txt"),sep = "\t",
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+
+write.table(x=downregulated_genes,
+            file=file.path("data","tel_exp_downregulated_genes.txt"),sep = "\t",
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+```
+
+# Running thresholded gene set enrichment analysis with gProfiler
+
+I ran an analysis of the upregualed genes the downregulated genes and finally all of them together using gprofiler
+https://biit.cs.ut.ee/gprofiler/gost
+
+
+Here are the downregulated gene results
+![](downreg1.png)
+![](downreg2.png)
+![](downreg3.png)
+
+Here are the upregulataed gene results
+
+![](upreg1.png)
+
+![](upreg2.png)
+
+![](upreg3.png)
+
+
+The upregulated genes seem to to have fewer terms show up with as many hits and when run together the results seem to favor the genes that have been downregulated
+
+
+
+
+
+Q:Which method did you choose and why?
+I used g:profiler since it worked really well with the homework assigment and has a large number of datasets it can pull from
+Q:What annotation data did you use and why? What version of the annotation are you using?
+I used the following annoted data sets:
+GO molecular function
+GO biological process
+Reactome
+WikiPathways
+
+Q:How many genesets were returned with what thresholds?
+
+
+
+Do the over-representation results support conclusions or mechanism discussed in the original paper?
+These results seem to support the findings in the paper many of the terms that were returned for the downregulated gene sets seeme to invlvoved in RNA regualtion such as RNA Polymerase II Transcription, ATP binding,ribonucleotide binding suggesting that isoginkgetin does indeed mimic the effects of RNA exosome inhibition
+
+
+
+
+
+# References 
+
+[@tseng_wang_burns_schroeder_gaspari_baumann_2015]
+[@tseng_wang_burns_schroeder_gaspari_baumann_2015]
+[@hgnc]
+[@database]
+[@edgeR]
+[@limma]
+[@GEOmetadb]
+[@BiocManager]
+[@knitr]
+[@GEOmetadb]
+[@GSA]
+[@RCurl]
+[@futilelogger]
+[@VennDiagram]
+[@Zuguang_Roland]
+[@Zuguang_Lei]
+[@gable_gaysinskaya_atik_talbot_kang_stanley_pugh_amat_codina_schenk_arcasoy_et_al_2019]
+[@uniprot_consortiumeuropean_bioinformatics_instituteprotein_information_resourcesib_swiss_institute_of_bioinformatics_2019]

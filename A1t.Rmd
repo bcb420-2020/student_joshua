@@ -1,0 +1,339 @@
+---
+title: "BCB420 - Computational Systems Biology Assignment 1"
+author: "Joshua Efe"
+date: "r Sys.Date()"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+bibliography: a.bib
+---
+
+
+# Basic Information
+
+## Getting the Required packages
+```{r message=FALSE, warning=FALSE}
+
+## Get required packages
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!requireNamespace("GEOmetadb", quietly = TRUE))
+    BiocManager::install("GEOmetadb")
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+if (!requireNamespace("edgeR", quietly = TRUE))
+    BiocManager::install("edgeR")
+
+if (!requireNamespace("knitr", quietly = TRUE))
+    install.packages("knitr")
+
+library("GEOmetadb")
+library("edgeR")
+library("biomaRt")
+library("knitr")
+if(!file.exists('GEOmetadb.sqlite')) getSQLiteFile()
+
+file.info('GEOmetadb.sqlite')
+
+con <- dbConnect(SQLite(),'GEOmetadb.sqlite')
+```
+
+## Getting the Data and doing some basic analysis
+```{r message=FALSE, warning=FALSE}
+sfiles = getGEOSuppFiles('GSE72055')
+gse <- getGEO("GSE72055",GSEMatrix=FALSE)
+kable(data.frame(head(Meta(gse))), format = "html")
+gset <- getGEO("GSE72055", GSEMatrix =TRUE, getGPL=FALSE)
+sfiles = getGEOSuppFiles('GSE72055')
+
+gse <- getGEO("GSE72055",GSEMatrix=FALSE)
+## just to see
+kable(data.frame(head(Meta(gse))), format = "html")
+
+
+
+
+## information
+current_gpl <- names(GPLList(gse))[1]
+current_gpl_info <- Meta(getGEO(current_gpl))
+current_gpl_info$title
+current_gpl_info$last_update_date
+current_gpl_info$organism
+fnames = rownames(sfiles)
+tel_refd1 =read.delim(fnames[1],header=TRUE,
+                       check.names = FALSE)
+
+tel_expd = read.delim(fnames[1],header=FALSE,
+                       check.names = FALSE)
+## had to make header false because the ids didn't have a header so ahd to add names manually
+tel_expd2 = tel_expd[2:60107,1:7]
+tel_exp = data.frame(tel_expd[2:60107,1], tel_refd1[,1:6])
+names(tel_exp) = c("ID","dmso12_1","dmso12_2", "dmso12_3","iso12_1","iso12_2","iso12_3")
+kable(tel_exp[1:15,1:7], format = "html")
+dim(tel_exp)
+## 60106
+```
+
+
+## Extracting the samples from the data
+```{r message=FALSE, warning=FALSE}
+samples <- data.frame(lapply(colnames(tel_exp)[2:7],
+                             FUN=function(x){unlist(strsplit(x, split = "_"))[c(1,2)]}))
+colnames(samples) <- colnames(tel_exp)[2:7]
+rownames(samples) <- c("treatment","repID") 
+samples <- data.frame(t(samples))
+
+summarized_gene_counts <- sort(table(tel_exp$ID),decreasing = TRUE)
+kable(summarized_gene_counts[which(summarized_gene_counts>1)[1:7]], format="html")
+```
+
+
+```{r message=FALSE, warning=FALSE}
+## translate out counts into counts per million using the edgeR package function cpm
+cpms = cpm(tel_exp[,2:7])
+rownames(cpms) <- tel_exp[,1]
+## get rid of low counts
+keep = rowSums(cpms >1) >=3
+tel_exp_filtered = tel_exp[keep,]
+
+
+dim(tel_exp_filtered)
+```
+
+Here it shows that we do not have repeated genes
+```{r message=FALSE, warning=FALSE}
+summarized_gene_counts_filtered <- sort(table(tel_exp_filtered$ID),decreasing = TRUE)
+
+```
+#Begin Analysis
+
+## Create a Box Plot for Non-normalized data
+```{r message=FALSE, warning=FALSE}
+data2plot <- log2(cpm(tel_exp_filtered[,2:7]))
+boxplot(data2plot, xlab = "Samples", ylab = "log2 CPM",
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "hTR Samples")
+
+abline(h = median(apply(data2plot, 2, median)), col = "green", lwd = 0.6, lty = "dashed")
+
+```
+
+## Desnsity distribtion for Non-Normalized Data
+```{r message=FALSE, warning=FALSE}
+## Distirbution of our data - Density plot
+## _________________________________________
+
+counts_density <- apply(log2(cpm(tel_exp_filtered[,2:7])), 2, density)
+
+## calculate limits
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density)) {
+    xlim <- range(c(xlim, counts_density[[i]]$x)); 
+    ylim <- range(c(ylim, counts_density[[i]]$y))
+}
+
+cols <- rainbow(length(counts_density))
+ltys <- rep(1, length(counts_density))
+
+## plot the desnity to inizalize
+plot(counts_density[[1]], xlim=xlim, ylim=ylim, type = "n",
+     ylab = "Smoothing density of log2-CPM", main="", cex.lab = 0.85)
+
+## plot each line
+for(i in 1:length(counts_density)) lines(counts_density[[i]], col=cols[i], lty=ltys[i])
+
+## create legened slide 39
+## Changed the size so it fit in the graph
+legend("topleft", colnames(data2plot),
+       col=cols, lty=ltys, cex=0.8,
+       border = "blue", text.col = "green4",
+       merge =TRUE, bg = "gray90")
+```
+
+
+```{r message=FALSE, warning=FALSE}
+## M vs A
+plotMA(log2(tel_exp[,c(2,5)]), ylab="M - ratio log expression", main="hTR dmso12_1 vs iso12_1 example")
+```
+## Apply TMM to our data 
+```{r message=FALSE, warning=FALSE}
+
+
+filtered_data_matrix <- as.matrix(tel_exp_filtered[,2:7])
+rownames(filtered_data_matrix) <- tel_exp_filtered$ID
+d = DGEList(counts=filtered_data_matrix, group=samples$treatment)
+
+d = calcNormFactors(d)
+
+normalized_counts <- cpm(d)
+dim(normalized_counts)
+data3plot <- log2(cpm(normalized_counts))
+```
+
+## Graphing the normalized data
+```{r message=FALSE, warning=FALSE}
+## Graphing the normalized data
+
+counts_density2 <- apply(log2(cpm(normalized_counts[,1:6])), 2, density)
+
+## calculate limits
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density2)) {
+    xlim <- range(c(xlim, counts_density2[[i]]$x)); 
+    ylim <- range(c(ylim, counts_density2[[i]]$y))
+}
+
+cols <- rainbow(length(counts_density2))
+ltys <- rep(1, length(counts_density2))
+
+## plot the desnity to inizalize
+plot(counts_density2[[1]], xlim=xlim, ylim=ylim, type = "n",
+     ylab = "Smoothing density of log2-CPM", main="", cex.lab = 0.85)
+
+## plot each line
+for(i in 1:length(counts_density2)) lines(counts_density2[[i]], col=cols[i], lty=ltys[i])
+
+## create legened slide 39
+## Changed the size so it fit in the graph
+legend("topleft", colnames(data2plot),
+       col=cols, lty=ltys, cex=0.5,
+       border = "blue", text.col = "green4",
+       merge =TRUE, bg = "gray90")
+```
+
+```{r message=FALSE, warning=FALSE}
+## MDS plot to represent seperation
+
+plotMDS(d, labels=rownames(samples),
+        col = c("deeppink4","blue","gold4","coral4", "cyan3")[factor(samples$treatment)])
+```
+
+
+
+The biological coeffient of variation (BVC) of our data to see how much it varies
+```{r}
+model_design <- model.matrix(~samples$repID + samples$treatment+0)
+d <- estimateDisp(d, model_design)
+plotBCV(d,col.tagwise = "black",col.common = "red")
+```
+
+```{r}
+plotMeanVar(d, show.raw.vars = TRUE,
+            show.tagwise.vars=FALSE, NBline=FALSE, 
+            show.ave.raw.vars = FALSE,show.binned.common.disp.vars = FALSE)
+```
+
+
+```{r}
+## Create a visual representation of the mean-variance relationship
+plotMeanVar(d, show.raw.vars = TRUE, show.tagwise.vars=TRUE, 
+            show.ave.raw.vars = TRUE,  
+            NBline=TRUE,
+            show.binned.common.disp.vars = TRUE)
+```
+
+```{r}
+
+```
+
+
+Finally we have the Normalized DataSet
+```{r message=FALSE, warning=FALSE}
+
+NormalizedData <- normalized_counts
+NormalizedData <-cbind.data.frame(tel_exp_filtered[,1],NormalizedData, stringsAsFactors = FALSE)
+colnames(NormalizedData)[1] <-"genes"
+NormalizedData$IDs
+
+```
+## Time to Map the essemble IDs to HUGO symbols
+```{r}
+library(biomaRt)
+listMarts()
+listEnsemblArchives()[1:10,]
+ensembl <- useMart("ensembl")
+datasets <- listDatasets(ensembl)
+kable(head(datasets),format = "html")
+kable(head(datasets[grep(datasets$dataset,pattern = "sapiens"),]),format = "html")
+ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
+help(getBM)
+dim(listFilters(ensembl))
+kable(listFilters(ensembl)[1:10,1:2], type="html")
+
+
+biomart_human_filters <- listFilters(ensembl)
+
+
+
+conversion_stash <- "tel_exp_conversion.rds"
+if(file.exists(conversion_stash)){
+  tel_exp_conversion <- readRDS(conversion_stash)
+} else {
+  tel_exp_conversion <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
+                            filters = c("ensembl_gene_id"),
+                            values = tel_exp_filtered$ID,
+                            mart = ensembl)
+  saveRDS(tel_exp_conversion, conversion_stash)
+}
+
+nrow(normalized_counts) - nrow(tel_exp_conversion)
+
+
+## Merge new IDS
+normalized_counts_annot <- merge(tel_exp_conversion,normalized_counts,by.x = 1, by.y = 0, all.y=TRUE)
+kable(normalized_counts_annot[1:5,1:5],type = "html")
+
+
+ensembl_id_missing_gene <- normalized_counts_annot$ensembl_gene_id[
+  which(is.na(normalized_counts_annot$hgnc_symbol))]
+length(ensembl_id_missing_gene)
+
+normalized_counts_annot <- subset(normalized_counts_annot, is.na(normalized_counts_annot$hgnc_symbol) == FALSE)
+NormalizedData <- normalized_counts_annot
+#citation("GEOmetadb")
+```
+# Questions and answers
+
+Q: What are the control and test conditions of the dataset?
+The control conditon are the cells that were treated with DMSO. There were a couple test conditions but in here I chose to focus on isoginkgetin treated cells.
+
+
+Q:Why is the dataset of interest to you?
+I was intrested in the magnament of telomeres as they are important in understanding aging, cell health, cancer, the biological immortality seen in the species of jellyfish Turritopsis dohrnii also known as the immortal jellyfish and to better understand animal telomarse regulation
+
+Q:Were there expression values that were not unique for specific genes? How did you handle these?
+No
+
+Q:Were there expression values that could not be mapped to current HUGO symbols?
+Yes, there were 181, I removed them here but added them later in A2 and A3
+
+Q:How many outliers were removed?
+There were 60106 we stated with and when we filtred out low counts we ened up with 15082 thus we had 45024 outliers removed
+Q:How did you handle replicates?
+There were no replicates
+
+The coverage is pretty good I decied to only look at the test case for the cells trated with isoginkgetin. There are 3 replicates for both this test case and for the control case.
+
+# References  
+
+[@tseng_wang_burns_schroeder_gaspari_baumann_2015]
+[@tseng_wang_burns_schroeder_gaspari_baumann_2015]
+[@hgnc]
+[@database]
+[@edgeR]
+[@limma]
+[@GEOmetadb]
+[@BiocManager]
+[@knitr]
+[@GEOmetadb]
+[@GSA]
+[@RCurl]
+[@futilelogger]
+[@VennDiagram]
+[@Zuguang_Roland]
+[@Zuguang_Lei]
+[@gable_gaysinskaya_atik_talbot_kang_stanley_pugh_amat_codina_schenk_arcasoy_et_al_2019]
+[@uniprot_consortiumeuropean_bioinformatics_instituteprotein_information_resourcesib_swiss_institute_of_bioinformatics_2019]

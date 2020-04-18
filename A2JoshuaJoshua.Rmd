@@ -15,6 +15,28 @@ library(ComplexHeatmap)
 library(circlize)
 ```
 
+
+```{r}
+heatmap_matrix <- NormalizedData[,2:ncol(NormalizedData)]
+rownames(heatmap_matrix) <- NormalizedData$genes
+colnames(heatmap_matrix) <- colnames(NormalizedData[,2:ncol(NormalizedData)])
+
+if(min(heatmap_matrix) == 0){
+    heatmap_col = colorRamp2(c( 0, max(heatmap_matrix)), c( "white", "red"))
+  } else {
+    heatmap_col = colorRamp2(c(min(heatmap_matrix), 0, max(heatmap_matrix)), c("blue", "white", "red"))
+  }
+current_heatmap <- Heatmap(as.matrix(heatmap_matrix),
+                               show_row_dend = TRUE,
+                               show_column_dend = TRUE, 
+                               col=heatmap_col,
+                               show_column_names = TRUE, 
+                               show_row_names = FALSE,
+                               show_heatmap_legend = TRUE
+                               )
+current_heatmap
+```
+
 First we are going to calculate the p values for each of the genes but first a quick example and how the data fits together with an MDS Plot 
 ```{r message=FALSE, warning=FALSE}
 #An example of a gene with two of the different samples
@@ -92,7 +114,7 @@ length(which(output_hits$P.Value < 0.05))
 length(which(output_hits$adj.P.Val < 0.05))
 
 ```
-From here we can see there seems to be a lot of signficantly expressed genes 11090 and when the p-values were adjusted using the Benjamini & Hochberg (1995) still had 10865 significantly expressed genes that passed correction. I used the Benjamini & Hochberg (1995) because it was the one seen in lecture and I believe used in a homework assigment, so I was more famiar with it.
+From here we can see there seems to be a lot of signficantly expressed genes 11090 and when the p-values were adjusted using the Benjamini & Hochberg (1995) still had 10865 significantly expressed genes that passed correction. I used the Benjamini & Hochberg (1995) because it was the one seen in lecture and I believe used in a homework assigment, so I was more famliar with it.
 
 Using a heatmap we can see the top genes of interest
 ```{r message=FALSE, warning=FALSE}
