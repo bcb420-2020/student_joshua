@@ -272,6 +272,7 @@ draw.triple.venn( area1=length(A), area2=length(B), area3 =
 length(C), n12 = length(intersect(A,B)), n13=length(intersect(A,C)), n23 = length(intersect(B,C)), n123 = length(intersect(A,intersect(B,C))), category = c("all genesets","all enrichment results","expression"), fill = c("red","green","blue"), cat.col = c("red","green","blue"))
 ```
 ![](data/dark_matter_overlaps.png)
+![](data/c.png)
 
 
 
@@ -335,7 +336,8 @@ current_heatmap <- Heatmap(as.matrix(heatmap_matrix),
                                )
 current_heatmap
 ```
-
+The heatmap takes a while to load so here is the image
+![](data/h.png)
 # References
 
 [@tseng_wang_burns_schroeder_gaspari_baumann_2015]
