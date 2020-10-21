@@ -15,11 +15,15 @@ A2t.Rmd was for Differential Gene Expression Analysis
 
 A3.Rmd was for Pathway and Network Analysis
 
+Using Kniter these Rmd files were used to create their respective HTML files
+
 Here is a link to the course wiki
 
 https://github.com/bcb420-2020/student_joshua/wiki
 
+Here is the github repo for the webistie i created with the HTML files
 
+https://github.com/Tsmnbx/BCB420-Gene-Analysis-Human-Telomerase-Rna-Processing-and-Quality-Control/edit/main/README.md
 
 
 
