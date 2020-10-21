@@ -3,7 +3,7 @@ This repo contains the code and files used for the BCB420 Course
 
 The purpose of this project was to do gene analysis on the dataset from GEO for paper Human Telomerase RNA Processing and Quality Control
 
-To see the full anaysis go to this link
+To see the full analysis go to this link
 
 https://tsmnbx.github.io/BCB420-Gene-Analysis-Human-Telomerase-Rna-Processing-and-Quality-Control/
 
