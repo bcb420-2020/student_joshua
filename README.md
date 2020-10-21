@@ -21,7 +21,7 @@ Here is a link to the course wiki
 
 https://github.com/bcb420-2020/student_joshua/wiki
 
-Here is the github repo for the webistie i created with the HTML files
+Here is the github repo for the webistie I created with the HTML files
 
 https://github.com/Tsmnbx/BCB420-Gene-Analysis-Human-Telomerase-Rna-Processing-and-Quality-Control
 
